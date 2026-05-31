@@ -20,6 +20,7 @@ export const CLM = {
   REQ_VERSION_AND_OS: 1012,
   CONN_CLIENTS_LIST: 1013,
   REQ_CONN_CLIENTS_LIST: 1014,
+  EMPTY_MESSAGE: 1009,
   RED_SERVER_LIST: 1018,
 } as const;
 
@@ -236,6 +237,7 @@ export interface ServerEntry {
   os: string;
   version: string;
   versionsort: string;
+  port2?: number;
   clients?: ClientEntry[];
 }
 
@@ -481,6 +483,8 @@ export async function* fetchJamulusServers(
   try {
     // State per server, indexed by "ip:port"
     const servers = new Map<string, ServerEntry>();
+    // Reverse lookup: ip -> (port -> serverKey)
+    const serverByIp = new Map<string, Map<number, string>>();
     // Track ping state: -1 = initial (need to send first ping),
     //                    0 = first ping received (send second ping),
     //                   >0 = ping calculated
@@ -490,7 +494,21 @@ export async function* fetchJamulusServers(
     let serversDone = 0;
     let listComplete = false;
 
-    // Send initial request to directory
+    // Helper: add server to both servers map and reverse lookup
+    function addServer(s: ServerEntry): void {
+      const key = `${s.ip}:${s.port}`;
+      if (servers.has(key)) return;
+      servers.set(key, s);
+      pingState.set(key, -1);
+      serversInProgress++;
+
+      let byIp = serverByIp.get(s.ip);
+      if (!byIp) {
+        byIp = new Map();
+        serverByIp.set(s.ip, byIp);
+      }
+      byIp.set(s.port, key);
+    }
     const reqMsg = buildReqServerList();
     let lastSendTime = Date.now();
     socket.send(reqMsg, 0, reqMsg.length, dirPort, dirIP);
@@ -539,12 +557,7 @@ export async function* fetchJamulusServers(
           if (fromDir) {
             const parsed = parseServerListFromMsg(data, dirIP, dirPort);
             for (const s of parsed) {
-              const key = `${s.ip}:${s.port}`;
-              if (!servers.has(key)) {
-                servers.set(key, s);
-                pingState.set(key, -1);
-                serversInProgress++;
-              }
+              addServer(s);
             }
             yield { type: "server-list", servers: Array.from(servers.values()), from: directoryAddr };
             listComplete = true;
@@ -565,12 +578,7 @@ export async function* fetchJamulusServers(
           if (fromDir) {
             const parsed = parseRedServerListFromMsg(data, dirIP, dirPort);
             for (const s of parsed) {
-              const key = `${s.ip}:${s.port}`;
-              if (!servers.has(key)) {
-                servers.set(key, s);
-                pingState.set(key, -1);
-                serversInProgress++;
-              }
+              addServer(s);
             }
             yield { type: "server-list", servers: Array.from(servers.values()), from: directoryAddr };
             listComplete = true;
@@ -651,6 +659,39 @@ export async function* fetchJamulusServers(
           const server = servers.get(key)!;
           server.clients = clients;
           yield { type: "server-update", server: { ...server }, from: key };
+          break;
+        }
+
+        case CLM.EMPTY_MESSAGE: {
+          const byIp = serverByIp.get(addr.address);
+          if (byIp) {
+            const existingKey = byIp.get(addr.port);
+            if (existingKey) {
+              // Known server — re-ping if still waiting for first response
+              const state = pingState.get(existingKey);
+              if (state === -1 || state === 0) {
+                const ts = (performance.now() | 0) >>> 0;
+                const pingMsg = buildPingMsg(ts);
+                socket.send(pingMsg, 0, pingMsg.length, addr.port, addr.address);
+              }
+            } else {
+              // Same IP, new port — port2 discovery
+              const firstPort = byIp.keys().next().value;
+              if (firstPort !== undefined) {
+                const ownerKey = byIp.get(firstPort)!;
+                const server = servers.get(ownerKey)!;
+                if (server && !server.port2) {
+                  server.port2 = addr.port;
+                  byIp.set(addr.port, ownerKey);
+
+                  const ts = (performance.now() | 0) >>> 0;
+                  const pingMsg = buildPingMsg(ts);
+                  socket.send(pingMsg, 0, pingMsg.length, addr.port, addr.address);
+                  yield { type: "server-update", server: { ...server }, from: ownerKey };
+                }
+              }
+            }
+          }
           break;
         }
 
