@@ -5,10 +5,9 @@ services:
       - "8080"
     environment:
       - PORT=8080
-      # Optional: require Bearer token for API access
-      # - AUTH_TOKEN=your-secret-token
-      # Optional: restrict which directory servers can be queried (comma-separated)
-      # - ALLOWED_SERVERS=anygenre1.jamulus.app:22124,anygenre2.jamulus.app:22224
+      # Optional: set these in Dokploy to enable auth / whitelist
+      - AUTH_TOKEN
+      - ALLOWED_SERVERS
     deploy:
       resources:
         limits:
