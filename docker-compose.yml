@@ -5,9 +5,8 @@ services:
       - "8080"
     environment:
       - PORT=8080
-      # Optional: set these in Dokploy to enable auth / whitelist
-      - AUTH_TOKEN
-      - ALLOWED_SERVERS
+      - ALLOWED_SERVERS=${ALLOWED_SERVERS:-default}
+      - AUTH_TOKEN=${AUTH_TOKEN:-}
     deploy:
       resources:
         limits:
