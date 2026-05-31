@@ -337,9 +337,9 @@ function parseRedServerListFromMsg(
     servers.push({
       index: 0,
       name,
-      numip,
-      ip: long2ip(numip),
-      port,
+      numip: (numip === 0 && port === 0) ? ip2long(_dirIP) : numip,
+      ip: (numip === 0 && port === 0) ? _dirIP : long2ip(numip),
+      port: port === 0 ? _dirPort : port,
       countryid: 0,
       country: "-",
       maxclients: 0,
