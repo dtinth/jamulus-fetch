@@ -66,11 +66,11 @@ async function handleRequest(req: Request): Promise<Response> {
   const timeout = setTimeout(() => ac.abort(), 5000);
 
   try {
-    const servers: ServerEntry[] = [];
+    let servers: ServerEntry[] = [];
 
     for await (const event of fetchJamulusServers(directory, ac.signal)) {
       if (event.type === "server-list") {
-        servers.push(...event.servers);
+        servers = event.servers; // last list is the filtered final one
       }
     }
 
