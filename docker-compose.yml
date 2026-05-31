@@ -9,4 +9,10 @@ services:
       # - AUTH_TOKEN=your-secret-token
       # Optional: restrict which directory servers can be queried (comma-separated)
       # - ALLOWED_SERVERS=anygenre1.jamulus.app:22124,anygenre2.jamulus.app:22224
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
     restart: unless-stopped

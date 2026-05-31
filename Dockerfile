@@ -1,4 +1,4 @@
-FROM denoland/deno:alpine-2
+FROM denoland/deno:alpine
 
 EXPOSE 8080
 
