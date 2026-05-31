@@ -3,6 +3,7 @@ services:
     image: ghcr.io/dtinth/jamulus-fetch:latest
     expose:
       - "8080"
+    pull_policy: always
     environment:
       - PORT=8080
       - ALLOWED_SERVERS=${ALLOWED_SERVERS:-default}

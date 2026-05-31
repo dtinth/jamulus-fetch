@@ -445,8 +445,6 @@ export async function* fetchJamulusServers(
 
   const socket = createSocket("udp4");
   socket.unref();
-  const cleanup = () => { try { socket.close(); } catch { /* */ } };
-  if (signal) signal.addEventListener("abort", cleanup, { once: true });
 
   // Packet queue bridging event-based socket to async generator
   const queue: Array<{ msg: Uint8Array; addr: { address: string; port: number } }> = [];
@@ -475,9 +473,19 @@ export async function* fetchJamulusServers(
       }, timeout);
     });
 
+  // Safe send — catches errors from closed socket
+  function trySend(buf: Uint8Array, _offset: number, _len: number, port: number, address: string) {
+    try {
+      socket.send(buf, _offset, _len, port, address);
+    } catch {
+      // socket closed, ignore
+    }
+  }
+
   await new Promise<void>((resolve, reject) => {
-    socket.on("error", reject);
-    socket.bind(0, resolve);
+    const onErr = (e: Error) => { socket.off("error", onErr); reject(e); };
+    socket.on("error", onErr);
+    socket.bind(0, () => { socket.off("error", onErr); resolve(); });
   });
 
   try {
@@ -511,7 +519,7 @@ export async function* fetchJamulusServers(
     }
     const reqMsg = buildReqServerList();
     let lastSendTime = Date.now();
-    socket.send(reqMsg, 0, reqMsg.length, dirPort, dirIP);
+    trySend(reqMsg, 0, reqMsg.length, dirPort, dirIP);
 
     const GLOBAL_TIMEOUT = 15000;
     const IDLE_TIMEOUT = 2000;
@@ -535,7 +543,7 @@ export async function* fetchJamulusServers(
         if (!listComplete && Date.now() - lastSendTime > 2000) {
           // Retry server list request if no response yet
           lastSendTime = Date.now();
-          socket.send(reqMsg, 0, reqMsg.length, dirPort, dirIP);
+          trySend(reqMsg, 0, reqMsg.length, dirPort, dirIP);
         }
         continue;
       }
@@ -567,7 +575,7 @@ export async function* fetchJamulusServers(
               if (pingState.get(key) === -1 && srv.port > 0) {
                 const ts = (performance.now() | 0) >>> 0;
                 const pingMsg = buildPingMsg(ts);
-                socket.send(pingMsg, 0, pingMsg.length, srv.port, srv.ip);
+                trySend(pingMsg, 0, pingMsg.length, srv.port, srv.ip);
               }
             }
           }
@@ -587,7 +595,7 @@ export async function* fetchJamulusServers(
               if (pingState.get(key) === -1 && srv.port > 0) {
                 const ts = (performance.now() | 0) >>> 0;
                 const pingMsg = buildPingMsg(ts);
-                socket.send(pingMsg, 0, pingMsg.length, srv.port, srv.ip);
+                trySend(pingMsg, 0, pingMsg.length, srv.port, srv.ip);
               }
             }
           }
@@ -611,7 +619,7 @@ export async function* fetchJamulusServers(
             // Send second ping
             const ts = (performance.now() | 0) >>> 0;
             const pingMsg = buildPingMsg(ts);
-            socket.send(pingMsg, 0, pingMsg.length, addr.port, addr.address);
+            trySend(pingMsg, 0, pingMsg.length, addr.port, addr.address);
           } else if (state === 0) {
             // Second ping response: calculate actual ping
             const now = (performance.now() | 0) >>> 0;
@@ -624,12 +632,12 @@ export async function* fetchJamulusServers(
 
             // Send version request
             const verMsg = buildReqVersionAndOS();
-            socket.send(verMsg, 0, verMsg.length, addr.port, addr.address);
+            trySend(verMsg, 0, verMsg.length, addr.port, addr.address);
 
             // Send connected clients request if there are clients
             if (pingRes.nclients > 0) {
               const cliMsg = buildReqConnClientsList();
-              socket.send(cliMsg, 0, cliMsg.length, addr.port, addr.address);
+              trySend(cliMsg, 0, cliMsg.length, addr.port, addr.address);
             }
 
             yield { type: "server-update", server: { ...server }, from: key };
@@ -672,7 +680,7 @@ export async function* fetchJamulusServers(
               if (state === -1 || state === 0) {
                 const ts = (performance.now() | 0) >>> 0;
                 const pingMsg = buildPingMsg(ts);
-                socket.send(pingMsg, 0, pingMsg.length, addr.port, addr.address);
+                trySend(pingMsg, 0, pingMsg.length, addr.port, addr.address);
               }
             } else {
               // Same IP, new port — port2 discovery
@@ -686,7 +694,7 @@ export async function* fetchJamulusServers(
 
                   const ts = (performance.now() | 0) >>> 0;
                   const pingMsg = buildPingMsg(ts);
-                  socket.send(pingMsg, 0, pingMsg.length, addr.port, addr.address);
+                  trySend(pingMsg, 0, pingMsg.length, addr.port, addr.address);
                   yield { type: "server-update", server: { ...server }, from: ownerKey };
                 }
               }
@@ -708,6 +716,6 @@ export async function* fetchJamulusServers(
     yield { type: "server-list", servers: finalServers, from: directoryAddr };
     yield { type: "done" };
   } finally {
-    cleanup();
+    try { socket.close(); } catch { /* */ }
   }
 }
