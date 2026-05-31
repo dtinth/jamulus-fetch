@@ -3,7 +3,26 @@
 import { fetchJamulusServers, type ServerEntry } from "./jamulus_protocol.ts";
 
 const AUTH_TOKEN = Deno.env.get("AUTH_TOKEN");
-const ALLOWED_SERVERS = Deno.env.get("ALLOWED_SERVERS")?.split(",").map((s) => s.trim()).filter(Boolean) ?? null;
+const ALLOWED_SERVERS_RAW = Deno.env.get("ALLOWED_SERVERS");
+
+const DEFAULT_SERVERS = [
+  "anygenre1.jamulus.io:22124",
+  "anygenre2.jamulus.io:22224",
+  "asia.jamulus.io:22624",
+  "rock.jamulus.io:22424",
+  "jazz.jamulus.io:22324",
+  "classical.jamulus.io:22524",
+  "choral.jamulus.io:22724",
+];
+
+let ALLOWED_SERVERS: string[] | null = null;
+if (ALLOWED_SERVERS_RAW) {
+  if (ALLOWED_SERVERS_RAW === "default") {
+    ALLOWED_SERVERS = DEFAULT_SERVERS;
+  } else {
+    ALLOWED_SERVERS = ALLOWED_SERVERS_RAW.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+}
 
 const ALLOWED_ORIGINS = Deno.env.get("ALLOWED_ORIGINS")
   ?.split(",").map((s) => s.trim()).filter(Boolean) ?? ["*"];
